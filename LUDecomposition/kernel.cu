@@ -112,13 +112,11 @@ __global__ void printMatrixGPU(float *M, int nRow, int nCol){
 	int ix = threadIdx.x + blockIdx.x * blockDim.x;
 	int iy = threadIdx.y + blockIdx.y * blockDim.y;
 	
-	//printf("NCol: %d --- NRow: %d --- idx: %d ", nCol, nRow, idx);
+	int temp = M[ix + iy * nCol];
 
-	printf("\ndev_M[%d][%d] = %d idx: %d", ix, iy, M[iy + BLOCKDIM * ix], iy + BLOCKDIM * ix);
-	/*if (ix < DIM){
-		printf("dev_M[%d] = %d \n", ix, M[ix]);
-	}*/
-
+	if (ix < nRow && iy < nCol){
+		printf("dev_M[%d][%d] = %d\N", ix, iy, temp);
+	}
 }
 
 /*Matrice esempio, su cui è verificata la correttezza dell'algoritmo

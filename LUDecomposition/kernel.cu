@@ -22,20 +22,25 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 	}
 }
 
-void LUDecomposition(float A[DIM][DIM], float *L){
+void LUDecomposition(float *A, float *L){
 	float mik = 0;
 
 	for (int i = 0; i < DIM - 1; i++){
+		//Lavoro su L
 		for (int j = i + 1; j < DIM; j++){
-			mik = A[j][i] / A[i][i];
+			mik = A[j * DIM + i] / A[i * DIM + i];
 
-			L[i * DIM + j] = mik;
+			L[j * DIM + i] = mik;
+		}
+		//Lavoro su U
+		for (int j = i + 1; j < DIM; j++){
+			mik = A[j * DIM + i] / A[i * DIM + i];
 
 			for (int k = i + 1; k < DIM; k++){
-				A[j][k] -= mik * A[i][k];
+				A[j * DIM + k] -= mik * A[i * DIM + k];
 			}
 
-			A[j][i] = 0;
+			A[j * DIM + i] = 0;
 		}
 	}
 }
@@ -79,12 +84,12 @@ float vectorProduct(float a[DIM], float b[DIM]){
 	return result;
 }
 
-void triangolarUpperMatrix(float M[DIM][DIM], float *U){
+void triangolarUpperMatrix(float *M, float *U){
 	int k = 0;
 
 	for (int i = 0; i < DIM; i++){
 		for (int j = k; j < DIM; j++){
-			U[i * DIM + j] = M[i][j];
+			U[i * DIM + j] = M[i * DIM + j];
 		}
 		k++;
 	}
@@ -115,7 +120,26 @@ __global__ void printMatrixGPU(float *M, int nRow, int nCol){
 	int temp = M[ix + iy * nCol];
 
 	if (ix < nRow && iy < nCol){
-		printf("dev_M[%d][%d] = %d\N", ix, iy, temp);
+		printf("dev_M[%d][%d] = %d\n", ix, iy, temp);
+	}
+}
+
+__global__ void LUDecompositionGPU(float *A, float *L){
+	float mik = 0;
+
+	for (int i = 0; i < DIM - 1; i++){
+		//Lavoro su L
+		for (int j = i + 1; j < DIM; j++){
+			L[j * DIM + i] = A[j * DIM + i] / A[i * DIM + i];
+		}
+		//Lavoro su U
+		for (int j = i + 1; j < DIM; j++){
+			for (int k = i + 1; k < DIM; k++){
+				A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
+			}
+
+			A[j * DIM + i] = 0;
+		}
 	}
 }
 
@@ -170,32 +194,32 @@ int main(){
 
 	printf("|____MATRICE A CPU____|\n");
 	printMatrixCPU(host_A);
-	printf("\n|____MATRICE A GPU____|\n");
+
+	/*printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 	
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());
+	gpuErrorCheck(cudaDeviceSynchronize());*/
 
 	//CALCOLO LA DECOMPOSIZIONE
 
-	//LUDecomposition(host_A, host_L);
+	LUDecomposition(host_A, host_L);
 
 	//STAMPO LE MATRICI L ED U
 
 	printf("\n|____FATTORIZZAZIONE LU____|\n");
 
-	setupLowerMatrix(host_L);
 	printf("\n|____MATRICE L CPU____|\n");
 	printMatrixCPU(host_L);
 
 	/*printf("\n|____MATRICE L GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_L);
 
-	gpuErrorCheck(cudaDeviceSynchronize());
+	gpuErrorCheck(cudaDeviceSynchronize());*/
 
 	triangolarUpperMatrix(host_A, host_U);
-	printf("\n|____MATRICE U____|\n");
-	printMatrixCPU(host_U);*/
+	printf("\n|____MATRICE U CPU____|\n");
+	printMatrixCPU(host_U);
 	
 	cudaDeviceReset();
 }

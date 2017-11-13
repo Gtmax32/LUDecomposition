@@ -23,21 +23,16 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 }
 
 void LUDecomposition(float *A, float *L){
-	float mik = 0;
-
 	for (int i = 0; i < DIM - 1; i++){
 		//Lavoro su L
 		for (int j = i + 1; j < DIM; j++){
-			mik = A[j * DIM + i] / A[i * DIM + i];
-
-			L[j * DIM + i] = mik;
+			L[j * DIM + i] = A[j * DIM + i] / A[i * DIM + i];
 		}
+
 		//Lavoro su U
 		for (int j = i + 1; j < DIM; j++){
-			mik = A[j * DIM + i] / A[i * DIM + i];
-
 			for (int k = i + 1; k < DIM; k++){
-				A[j * DIM + k] -= mik * A[i * DIM + k];
+				A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
 			}
 
 			A[j * DIM + i] = 0;
@@ -125,8 +120,6 @@ __global__ void printMatrixGPU(float *M, int nRow, int nCol){
 }
 
 __global__ void LUDecompositionGPU(float *A, float *L){
-	float mik = 0;
-
 	for (int i = 0; i < DIM - 1; i++){
 		//Lavoro su L
 		for (int j = i + 1; j < DIM; j++){

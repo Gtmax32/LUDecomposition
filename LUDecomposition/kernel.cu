@@ -115,10 +115,10 @@ __global__ void printMatrixGPU(float *M, int nRow, int nCol){
 	int ix = threadIdx.x + blockIdx.x * blockDim.x;
 	int iy = threadIdx.y + blockIdx.y * blockDim.y;
 	
-	int temp = M[ix + iy * nCol];
+	float temp = M[ix * nRow + iy];
 
 	if (ix < nRow && iy < nCol){
-		printf("dev_M[%d][%d] = %d\n", ix, iy, temp);
+		printf("dev_M[%d][%d] = %8f\n", ix, iy, temp);
 	}
 }
 
@@ -126,18 +126,18 @@ __global__ void LUDecompositionGPU(float *A, float *L){
 	int i = threadIdx.x + blockIdx.x * blockDim.x;
 	//Lavoro su L
 	for (int j = i + 1; j < DIM; j++){
-		int numer = A[j * DIM + i], denom = A[i * DIM + i];
-		int val = 0;
+		float numer = A[j * DIM + i], denom = A[i * DIM + i];
+		float val = 0;
 		
-		printf("Index: i:%d j:%d\nA[j][i] = %d\nA[i][i] = %d\n", i, j, numer, denom);
+		//printf("Index: i:%d j:%d\nA[j][i] = %d\nA[i][i] = %d\n", i, j, numer, denom);
 		
-		L[j * DIM + i] = numer / denom;
-		val = L[j * DIM + i];
+		val = numer / denom;
+		L[j * DIM + i] = val;
 		
-		printf("L[%d][%d]= %d\n", j, i, val);
+		printf("L[%d][%d]= %8f - %8f %8f\n", j, i, val, numer, denom);
 	}
 
-	__syncthreads();
+	
 		//Lavoro su U
 		/*for (int j = i + 1; j < DIM; j++){
 			for (int k = i + 1; k < DIM; k++){
@@ -197,19 +197,19 @@ int main(){
 
 	//STAMPA MATRICE DA DECOMPORRE
 
-	/*printf("|____MATRICE A CPU____|\n");
+	printf("|____MATRICE A CPU____|\n");
 	printMatrixCPU(host_A);
 
 	printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 	
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());*/
+	gpuErrorCheck(cudaDeviceSynchronize());
 
 	//CALCOLO LA DECOMPOSIZIONE
 
 	LUDecomposition(host_A, host_L);
-	LUDecompositionGPU << <1, blockSize >> >(dev_A, dev_L);
+	LUDecompositionGPU << <1, 16 >> >(dev_A, dev_L);
 	//STAMPO LE MATRICI L ED U
 
 	printf("\n|____FATTORIZZAZIONE LU____|\n");
@@ -222,9 +222,9 @@ int main(){
 
 	gpuErrorCheck(cudaDeviceSynchronize());
 
-	/*triangolarUpperMatrix(host_A, host_U);
+	triangolarUpperMatrix(host_A, host_U);
 	printf("\n|____MATRICE U CPU____|\n");
-	printMatrixCPU(host_U);*/
+	printMatrixCPU(host_U);
 	
 	cudaDeviceReset();
 }

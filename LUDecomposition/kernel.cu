@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda.h>
-#include <device_functions.h>
+#include "device_functions.h"
 #include <cuda_runtime_api.h>
 
 #define DIM 4
@@ -124,28 +124,28 @@ __global__ void printMatrixGPU(float *M, int nRow, int nCol){
 
 __global__ void LUDecompositionGPU(float *A, float *L){
 	int i = threadIdx.x + blockIdx.x * blockDim.x;
-	//Lavoro su L
-	for (int j = i + 1; j < DIM; j++){
-		float numer = A[j * DIM + i], denom = A[i * DIM + i];
-		float val = 0;
-		
-		//printf("Index: i:%d j:%d\nA[j][i] = %d\nA[i][i] = %d\n", i, j, numer, denom);
-		
-		val = numer / denom;
-		L[j * DIM + i] = val;
-		
-		printf("L[%d][%d]= %8f - %8f %8f\n", j, i, val, numer, denom);
-	}
 
-	
-		//Lavoro su U
-		/*for (int j = i + 1; j < DIM; j++){
+	float valji = 0, valii = 0, val = 0, tmp = 0;
+	//Lavoro su L
+	if (i < DIM - 1){
+		for (int j = i + 1; j < DIM; j++){
+			valji = A[j * DIM + i], valii = A[i * DIM + i];
+			//printf("Index: i:%d j:%d\nA[j][i] = %d\nA[i][i] = %d\n", i, j, numer, denom);
+
+			val = valji / valii;
+			L[j * DIM + i] = val;
+
+			printf("L[%d][%d]= %8f - %8f %8f\n", j, i, val, valji, valii);
+			
+			//Lavoro su U
 			for (int k = i + 1; k < DIM; k++){
-				A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
+				tmp = val * A[i * DIM + k];
+				A[j * DIM + k] -= tmp;
 			}
 
 			A[j * DIM + i] = 0;
-		}*/
+		}		
+	}
 }
 
 /*Matrice esempio, su cui è verificata la correttezza dell'algoritmo
@@ -208,23 +208,33 @@ int main(){
 
 	//CALCOLO LA DECOMPOSIZIONE
 
+	printf("\n|____FATTORIZZAZIONE LU____|\n");
+
 	LUDecomposition(host_A, host_L);
-	LUDecompositionGPU << <1, 16 >> >(dev_A, dev_L);
+	LUDecompositionGPU << <1, blockSize >> >(dev_A, dev_L);
 	//STAMPO LE MATRICI L ED U
 
-	printf("\n|____FATTORIZZAZIONE LU____|\n");
+	gpuErrorCheck(cudaPeekAtLastError());
+	gpuErrorCheck(cudaDeviceSynchronize());	
 
 	printf("\n|____MATRICE L CPU____|\n");
 	printMatrixCPU(host_L);
 
 	printf("\n|____MATRICE L GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_L,DIM,DIM);
-
+	
+	gpuErrorCheck(cudaPeekAtLastError());
 	gpuErrorCheck(cudaDeviceSynchronize());
 
 	triangolarUpperMatrix(host_A, host_U);
 	printf("\n|____MATRICE U CPU____|\n");
 	printMatrixCPU(host_U);
+
+	printf("\n|____MATRICE U GPU____|\n");
+	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 	
+	gpuErrorCheck(cudaPeekAtLastError());
+	gpuErrorCheck(cudaDeviceSynchronize());
+
 	cudaDeviceReset();
 }

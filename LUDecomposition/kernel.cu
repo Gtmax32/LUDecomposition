@@ -43,6 +43,58 @@ void LUDecomposition(float *A, float *L){
 	}
 }
 
+__global__ void LUDecompositionGPU(float *A, float *L){
+	int i = threadIdx.x + blockIdx.x * blockDim.x;
+
+	float valji = 0, valii = 0, val = 0, tmp = 0;
+	//Lavoro su L
+	if (i < DIM - 1){
+		for (int j = i + 1; j < DIM; j++){
+			valji = A[j * DIM + i], valii = A[i * DIM + i];
+			//printf("Index: i:%d j:%d\nA[j][i] = %d\nA[i][i] = %d\n", i, j, numer, denom);
+
+			val = valji / valii;
+			L[j * DIM + i] = val;
+
+			printf("L[%d][%d]= %8f - %8f %8f\n", j, i, val, valji, valii);
+			
+			//Lavoro su U
+			for (int k = i + 1; k < DIM; k++){
+				tmp = val * A[i * DIM + k];
+				A[j * DIM + k] -= tmp;
+			}
+
+			A[j * DIM + i] = 0;
+		}		
+	}
+}
+
+__global__ void columnLUDecompositionGPU(float *A, float *L, float *U, int i){
+	//L'indice i rappresenta la colonna da considerare, mentre threadIdx.x rappresenta la riga
+	int j = threadIdx.x + 1 + i;
+	int index = j * blockDim.x + i;
+	float val = 0;
+	
+	if (j < DIM){
+		L[index] = A[index] / A[i * DIM + i];
+
+		//A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
+
+		for (int k = i + 1; k < DIM; k++){
+			val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
+			A[j * DIM + k] = val;
+			//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
+			//U[j * DIM + k] = A[j * DIM + k] = val;
+
+			printf("i: %d - j: %d - k: %d - val: %f ", i, j, k, val);
+		}
+
+		A[index] = 0;
+
+		__syncthreads();
+	}	
+}
+
 float matrixDet(float m[DIM][DIM], int car) {
 	float determinante = 0;
 	//Cardinalità uno
@@ -114,7 +166,7 @@ void printMatrixCPU(float *M){
 __global__ void printMatrixGPU(float *M, int nRow, int nCol){
 	int ix = threadIdx.x + blockIdx.x * blockDim.x;
 	int iy = threadIdx.y + blockIdx.y * blockDim.y;
-	
+
 	float temp = M[ix * nRow + iy];
 
 	if (ix < nRow && iy < nCol){
@@ -122,40 +174,6 @@ __global__ void printMatrixGPU(float *M, int nRow, int nCol){
 	}
 }
 
-__global__ void LUDecompositionGPU(float *A, float *L){
-	int i = threadIdx.x + blockIdx.x * blockDim.x;
-
-	float valji = 0, valii = 0, val = 0, tmp = 0;
-	//Lavoro su L
-	if (i < DIM - 1){
-		for (int j = i + 1; j < DIM; j++){
-			valji = A[j * DIM + i], valii = A[i * DIM + i];
-			//printf("Index: i:%d j:%d\nA[j][i] = %d\nA[i][i] = %d\n", i, j, numer, denom);
-
-			val = valji / valii;
-			L[j * DIM + i] = val;
-
-			printf("L[%d][%d]= %8f - %8f %8f\n", j, i, val, valji, valii);
-			
-			//Lavoro su U
-			for (int k = i + 1; k < DIM; k++){
-				tmp = val * A[i * DIM + k];
-				A[j * DIM + k] -= tmp;
-			}
-
-			A[j * DIM + i] = 0;
-		}		
-	}
-}
-
-__global__ void columnLUDecompositionGPU(float *A, float *L, float *U, int i){
-	//L'indice i rappresenta la colonna da considerare, mentre threadIdx.x rappresenta la riga
-	int index = (threadIdx.x + 1 ) * blockDim.x + i;
-	
-	L[index] = A[index] / A[i * DIM + i];
-
-	__syncthreads();
-}
 
 /*Matrice esempio, su cui è verificata la correttezza dell'algoritmo
 float host_A[DIM][DIM] = { { 1, 3, 4, 5 }, { 2, 1, 1, 0 }, { 2, 3, 1, -1 }, { 0, 4, 3, 2} };
@@ -206,8 +224,8 @@ int main(){
 
 	//STAMPA MATRICE DA DECOMPORRE
 
-	printf("|____MATRICE A CPU____|\n");
-	printMatrixCPU(host_A);
+	/*printf("|____MATRICE A CPU____|\n");
+	printMatrixCPU(host_A);*/
 
 	printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
@@ -221,7 +239,15 @@ int main(){
 
 	LUDecomposition(host_A, host_L);
 	//LUDecompositionGPU << <1, blockSize >> >(dev_A, dev_L);
-	columnLUDecompositionGPU << <1, 4 >> >(dev_A, dev_L, dev_U, 0);
+	
+	printf("\n|____DEBUG____|\n");
+	
+	for (int i = 0; i < DIM - 1; i++){
+		columnLUDecompositionGPU << <1, 4 >> >(dev_A, dev_L, dev_U, i);
+		gpuErrorCheck(cudaDeviceSynchronize());
+	}
+
+	printf("\n|____________|\n");
 
 	//STAMPO LE MATRICI L ED U
 	gpuErrorCheck(cudaPeekAtLastError());
@@ -240,7 +266,13 @@ int main(){
 	printf("\n|____MATRICE U CPU____|\n");
 	printMatrixCPU(host_U);
 
-	printf("\n|____MATRICE U GPU____|\n");
+	/*printf("\n|____MATRICE U GPU____|\n");
+	printMatrixGPU << <1, blockSize >> >(dev_U, DIM, DIM);
+
+	gpuErrorCheck(cudaPeekAtLastError());
+	gpuErrorCheck(cudaDeviceSynchronize());*/
+
+	printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 	
 	gpuErrorCheck(cudaPeekAtLastError());

@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda.h>
-#include "device_functions.h"
+#include <device_functions.h>
 #include <cuda_runtime_api.h>
 
 #define DIM 4
@@ -148,6 +148,15 @@ __global__ void LUDecompositionGPU(float *A, float *L){
 	}
 }
 
+__global__ void columnLUDecompositionGPU(float *A, float *L, float *U, int i){
+	//L'indice i rappresenta la colonna da considerare, mentre threadIdx.x rappresenta la riga
+	int index = (threadIdx.x + 1 ) * blockDim.x + i;
+	
+	L[index] = A[index] / A[i * DIM + i];
+
+	__syncthreads();
+}
+
 /*Matrice esempio, su cui è verificata la correttezza dell'algoritmo
 float host_A[DIM][DIM] = { { 1, 3, 4, 5 }, { 2, 1, 1, 0 }, { 2, 3, 1, -1 }, { 0, 4, 3, 2} };
 
@@ -211,11 +220,12 @@ int main(){
 	printf("\n|____FATTORIZZAZIONE LU____|\n");
 
 	LUDecomposition(host_A, host_L);
-	LUDecompositionGPU << <1, blockSize >> >(dev_A, dev_L);
-	//STAMPO LE MATRICI L ED U
+	//LUDecompositionGPU << <1, blockSize >> >(dev_A, dev_L);
+	columnLUDecompositionGPU << <1, 4 >> >(dev_A, dev_L, dev_U, 0);
 
+	//STAMPO LE MATRICI L ED U
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());	
+	gpuErrorCheck(cudaDeviceSynchronize());
 
 	printf("\n|____MATRICE L CPU____|\n");
 	printMatrixCPU(host_L);

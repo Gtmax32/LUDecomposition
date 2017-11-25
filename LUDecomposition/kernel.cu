@@ -73,17 +73,22 @@ __global__ void LUDecompositionGPU(float *A, float *L){
 __global__ void columnLUDecompositionGPU(float *A, float *L, float *U, int i){
 	//L'indice i rappresenta la colonna da considerare, mentre threadIdx.x rappresenta la riga
 	int j = threadIdx.x + 1 + i;
-	int index = j * blockDim.x + i;
-	float val = 0;
+	int index = j * blockDim.x + i, indexII = i * DIM + i, indexJK = 0, indexIK = 0;
+	float val = 0, mik = 0;
 	
 	if (j < DIM){
-		L[index] = A[index] / A[i * DIM + i];
+		mik = A[index] / A[indexII];
+		L[index] = mik;
 
 		//A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
 
 		for (int k = i + 1; k < DIM; k++){
-			val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
-			A[j * DIM + k] = val;
+			indexIK = i * DIM + k;
+			indexJK = j * DIM + k;
+
+			val = A[indexJK] - mik * A[indexIK];
+			
+			A[indexJK] = val;
 			//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
 			//U[j * DIM + k] = A[j * DIM + k] = val;
 

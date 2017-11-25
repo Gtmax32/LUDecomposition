@@ -27,19 +27,29 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 }
 
 void LUDecomposition(float *A, float *L){
+	int indexII = 0, indexJI = 0, indexJK = 0, indexIK = 0;
+	float mik = 0;
+	
 	for (int i = 0; i < DIM - 1; i++){
-		//Lavoro su L
+		
 		for (int j = i + 1; j < DIM; j++){
-			L[j * DIM + i] = A[j * DIM + i] / A[i * DIM + i];
-		}
+			indexJI = j * DIM + i;
+			indexII = i * DIM + i;
+			
+			mik = A[indexJI] / A[indexII];
 
-		//Lavoro su U
-		for (int j = i + 1; j < DIM; j++){
+			//Lavoro su L
+			L[indexJI] = mik;
+
+			//Lavoro su U
 			for (int k = i + 1; k < DIM; k++){
-				A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
+				indexJK = j * DIM + k;
+				indexIK = i * DIM + k;
+
+				A[indexJK] -= mik * A[indexIK];
 			}
 
-			A[j * DIM + i] = 0;
+			A[indexJI] = 0;
 		}
 	}
 }
@@ -284,8 +294,6 @@ int main(){
 	LUDecomposition(host_A, host_L);
 
 	duration = clock() - begin;
-
-	printf("CPU Timing:\n-duration: %f\n", (float)(duration) / CLOCKS_PER_SEC);
 	
 	//LUDecompositionGPU << <1, blockSize >> >(dev_A, dev_L);
 	
@@ -313,7 +321,7 @@ int main(){
 
 	cudaEventElapsedTime(&cudaElapsedTime, start, stop);
 
-	printf("\n%8f", cudaElapsedTime / 1000);
+	printf("%8f %8f\n", (float)(duration) / CLOCKS_PER_SEC, cudaElapsedTime / 1000);
 
 	//printf("\n|____________|\n");
 

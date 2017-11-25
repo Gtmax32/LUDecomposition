@@ -12,8 +12,9 @@
 #include <device_functions.h>
 #include <cuda_runtime_api.h>
 
-#define DIM 1024
-#define BLOCKDIM 1024
+#define DIM 8
+#define BLOCKDIM 4
+#define GRIDDIM 2
 
 #define gpuErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
@@ -73,27 +74,29 @@ __global__ void LUDecompositionGPU(float *A, float *L){
 __global__ void columnLUDecompositionGPU(float *A, float *L, float *U, int i){
 	//L'indice i rappresenta la colonna da considerare, mentre threadIdx.x rappresenta la riga
 	int j = threadIdx.x + 1 + i;
-	int index = j * blockDim.x + i;
+	int index = j * blockDim.x + blockIdx.x + i;
 	float val = 0;
 	
-	if (j < DIM){
-		L[index] = A[index] / A[i * DIM + i];
+	L[index] = A[index] / A[i * DIM + i];
 
-		//A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
+	//A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
 
-		for (int k = i + 1; k < DIM; k++){
-			val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
-			A[j * DIM + k] = val;
-			//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
-			//U[j * DIM + k] = A[j * DIM + k] = val;
+	for (int k = i + 1; k < BLOCKDIM; k++){
+		val = A[j * BLOCKDIM + k] - A[index] / A[i * BLOCKDIM + i] * A[i * BLOCKDIM + k];
+		A[j * BLOCKDIM + k] = val;
+		//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
+		//U[j * DIM + k] = A[j * DIM + k] = val;
 
-			//printf("i: %d - j: %d - k: %d - val: %f ", i, j, k, val);
-		}
+		printf("i: %d - j: %d - k: %d - val: %f ", i, j, k, val);
+	}
 
-		A[index] = 0;
+	A[index] = 0;
 
-		__syncthreads();
-	}	
+	__syncthreads();
+
+	/*if (j < BLOCKDIM){
+		
+	}*/	
 }
 
 void checkResult(float *A, float *RA){
@@ -230,7 +233,7 @@ int main(){
 	host_RU = (float *)malloc(size);
 	host_RL = (float *)malloc(size);
 
-	srand(time(NULL));
+	//srand(time(NULL));
 
 	for (int i = 0; i < DIM; i++){
 		for (int j = 0; j < DIM; j++){
@@ -261,10 +264,10 @@ int main(){
 
 	//STAMPA MATRICE DA DECOMPORRE
 
-	/*printf("|____MATRICE A CPU____|\n");
+	printf("|____MATRICE A CPU____|\n");
 	printMatrixCPU(host_A);
 
-	printf("\n|____MATRICE A GPU____|\n");
+	/*printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 	
 	gpuErrorCheck(cudaPeekAtLastError());
@@ -291,7 +294,7 @@ int main(){
 
 	for (int i = 0; i < DIM - 1; i++){		
 
-		columnLUDecompositionGPU << <1, BLOCKDIM >> >(dev_A, dev_L, dev_U, i);
+		columnLUDecompositionGPU << <GRIDDIM, BLOCKDIM>> >(dev_A, dev_L, dev_U, i);
 		gpuErrorCheck(cudaDeviceSynchronize());
 
 		//printf("\nKernel Time for column %d: %8f", i, cudaElapsedTime / 1000);
@@ -316,38 +319,38 @@ int main(){
 	//gpuErrorCheck(cudaPeekAtLastError());
 	//gpuErrorCheck(cudaDeviceSynchronize());
 
-	/*printf("\n|____MATRICE L CPU____|\n");
+	printf("\n|____MATRICE L CPU____|\n");
 	printMatrixCPU(host_L);
 
 	printf("\n|____MATRICE L GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_L,DIM,DIM);
 	
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());*/
+	gpuErrorCheck(cudaDeviceSynchronize());
 
 	triangolarUpperMatrix(host_A, host_U);
-	/*printf("\n|____MATRICE U CPU____|\n");
+	printf("\n|____MATRICE U CPU____|\n");
 	printMatrixCPU(host_U);
 
-	printf("\n|____MATRICE U GPU____|\n");
+	/*printf("\n|____MATRICE U GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_U, DIM, DIM);
 
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());
+	gpuErrorCheck(cudaDeviceSynchronize());*/
 
 	printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 	
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());*/
+	gpuErrorCheck(cudaDeviceSynchronize());
 
-	gpuErrorCheck(cudaMemcpy(host_RU, dev_A, size, cudaMemcpyDeviceToHost));
+	/*gpuErrorCheck(cudaMemcpy(host_RU, dev_A, size, cudaMemcpyDeviceToHost));
 
 	checkResult(host_U, host_RU);
 
 	gpuErrorCheck(cudaMemcpy(host_RL, dev_L, size, cudaMemcpyDeviceToHost));
 
-	checkResult(host_L, host_RL);
+	checkResult(host_L, host_RL);*/
 
 	free(host_A);
 	free(host_L);

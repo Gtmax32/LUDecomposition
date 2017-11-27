@@ -12,8 +12,8 @@
 #include <device_functions.h>
 #include <cuda_runtime_api.h>
 
-#define DIM 8
-#define BLOCKDIM 4
+#define DIM 2048
+#define BLOCKDIM 1024
 #define GRIDDIM 2
 
 #define gpuErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -27,20 +27,38 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 	}
 }
 
-void LUDecomposition(float *A, float *L){
-	for (int i = 0; i < DIM - 1; i++){
-		//Lavoro su L
-		for (int j = i + 1; j < DIM; j++){
-			L[j * DIM + i] = A[j * DIM + i] / A[i * DIM + i];
-		}
+/*
+indexII 
+*/
 
-		//Lavoro su U
+void LUDecomposition(float *A, float *L){
+	int indexII = 0, indexJI = 0, indexJK = 0, indexIK = 0;
+	float mik = 0;
+
+	for (int i = 0; i < DIM - 1; i++){
+
 		for (int j = i + 1; j < DIM; j++){
+			indexJI = j * DIM + i;
+			indexII = i * DIM + i;
+
+			mik = A[indexJI] / A[indexII];
+
+			//Lavoro su L
+			L[indexJI] = mik;
+
+			//Lavoro su U
 			for (int k = i + 1; k < DIM; k++){
-				A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
+				indexJK = j * DIM + k;
+				indexIK = i * DIM + k;
+
+				A[indexJK] -= mik * A[indexIK];
+
+				/*if (i == 0){
+					printf("j: %d - k: %d - indexII: %d - indexJI: %d - indexJK: %d - indexIK: %d\n", j, k, indexII, indexJI, indexJK, indexIK);
+				}*/
 			}
 
-			A[j * DIM + i] = 0;
+			A[indexJI] = 0;
 		}
 	}
 }
@@ -71,32 +89,68 @@ __global__ void LUDecompositionGPU(float *A, float *L){
 	}
 }
 
+/*
 __global__ void columnLUDecompositionGPU(float *A, float *L, float *U, int i){
 	//L'indice i rappresenta la colonna da considerare, mentre threadIdx.x rappresenta la riga
 	int j = threadIdx.x + 1 + i;
-	int index = j * blockDim.x + blockIdx.x + i;
-	float val = 0;
-	
-	L[index] = A[index] / A[i * DIM + i];
+	int index = j * blockDim.x + i, indexII = i * DIM + i, indexJK = 0, indexIK = 0;
+	float val = 0, mik = 0;
 
-	//A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
+	if (j < DIM){
+		mik = A[index] / A[indexII];
+		L[index] = mik;
 
-	for (int k = i + 1; k < BLOCKDIM; k++){
-		val = A[j * BLOCKDIM + k] - A[index] / A[i * BLOCKDIM + i] * A[i * BLOCKDIM + k];
-		A[j * BLOCKDIM + k] = val;
-		//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
-		//U[j * DIM + k] = A[j * DIM + k] = val;
+		//A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
 
-		printf("i: %d - j: %d - k: %d - val: %f ", i, j, k, val);
+		for (int k = i + 1; k < DIM; k++){
+			indexIK = i * DIM + k;
+			indexJK = j * DIM + k;
+
+			val = A[indexJK] - mik * A[indexIK];
+
+			A[indexJK] = val;
+			//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
+			//U[j * DIM + k] = A[j * DIM + k] = val;
+
+			//printf("i: %d - j: %d - k: %d - val: %f ", i, j, k, val);
+		}
+
+		A[index] = 0;
+
+		__syncthreads();
 	}
+}
+*/
 
-	A[index] = 0;
+__global__ void columnLUDecompositionGPU(float *A, float *L, float *U, int i){
+	//L'indice i rappresenta la colonna da considerare, mentre threadIdx.x rappresenta la riga
+	int j = threadIdx.x + blockDim.x * blockIdx.x + 1 + i;
+	int indexJI = j * DIM + i, indexII = i * DIM + i, indexJK = 0, indexIK = 0;
+	float val = 0, mik = 0;
+	
+	if (j < DIM){
+		mik = A[indexJI] / A[indexII];
+		L[indexJI] = mik;
 
-	__syncthreads();
+		//A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
 
-	/*if (j < BLOCKDIM){
-		
-	}*/	
+		for (int k = i + 1; k < DIM; k++){
+			indexIK = i * DIM + k;
+			indexJK = j * DIM + k;
+
+			val = A[indexJK] - mik * A[indexIK];
+
+			A[indexJK] = val;
+			//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
+			//U[j * DIM + k] = A[j * DIM + k] = val;
+
+			//printf("i: %d - j: %d - k: %d - val: %f\n", i, j, k, val);
+		}
+
+		A[indexJI] = 0;
+
+		__syncthreads();
+	}
 }
 
 void checkResult(float *A, float *RA){
@@ -216,7 +270,7 @@ int main(){
 
 	clock_t begin, duration;
 
-	dim3 blockSize(BLOCKDIM, BLOCKDIM);
+	dim3 blockSize(DIM, DIM);
 
 	cudaEvent_t start, stop;
 	
@@ -233,7 +287,7 @@ int main(){
 	host_RU = (float *)malloc(size);
 	host_RL = (float *)malloc(size);
 
-	//srand(time(NULL));
+	srand(time(NULL));
 
 	for (int i = 0; i < DIM; i++){
 		for (int j = 0; j < DIM; j++){
@@ -264,10 +318,10 @@ int main(){
 
 	//STAMPA MATRICE DA DECOMPORRE
 
-	printf("|____MATRICE A CPU____|\n");
+	/*printf("|____MATRICE A CPU____|\n");
 	printMatrixCPU(host_A);
 
-	/*printf("\n|____MATRICE A GPU____|\n");
+	printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 	
 	gpuErrorCheck(cudaPeekAtLastError());
@@ -316,41 +370,41 @@ int main(){
 	//printf("\n|____________|\n");
 
 	//STAMPO LE MATRICI L ED U
-	//gpuErrorCheck(cudaPeekAtLastError());
-	//gpuErrorCheck(cudaDeviceSynchronize());
+	gpuErrorCheck(cudaPeekAtLastError());
+	gpuErrorCheck(cudaDeviceSynchronize());
 
-	printf("\n|____MATRICE L CPU____|\n");
+	/*printf("\n|____MATRICE L CPU____|\n");
 	printMatrixCPU(host_L);
 
 	printf("\n|____MATRICE L GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_L,DIM,DIM);
 	
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());
+	gpuErrorCheck(cudaDeviceSynchronize());*/
 
 	triangolarUpperMatrix(host_A, host_U);
-	printf("\n|____MATRICE U CPU____|\n");
+	/*printf("\n|____MATRICE U CPU____|\n");
 	printMatrixCPU(host_U);
 
 	/*printf("\n|____MATRICE U GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_U, DIM, DIM);
 
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());*/
+	gpuErrorCheck(cudaDeviceSynchronize());
 
 	printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 	
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());
+	gpuErrorCheck(cudaDeviceSynchronize());*/
 
-	/*gpuErrorCheck(cudaMemcpy(host_RU, dev_A, size, cudaMemcpyDeviceToHost));
+	gpuErrorCheck(cudaMemcpy(host_RU, dev_A, size, cudaMemcpyDeviceToHost));
 
 	checkResult(host_U, host_RU);
 
 	gpuErrorCheck(cudaMemcpy(host_RL, dev_L, size, cudaMemcpyDeviceToHost));
 
-	checkResult(host_L, host_RL);*/
+	checkResult(host_L, host_RL);
 
 	free(host_A);
 	free(host_L);

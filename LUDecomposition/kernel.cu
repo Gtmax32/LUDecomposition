@@ -13,8 +13,8 @@
 #include <cuda_runtime_api.h>
 
 #define DIM 2048
-#define BLOCKDIM 1024
-#define GRIDDIM 2
+#define BLOCKDIM 512
+#define GRIDDIM 4
 
 #define gpuErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)

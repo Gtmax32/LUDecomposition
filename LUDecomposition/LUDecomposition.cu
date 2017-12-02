@@ -12,9 +12,9 @@
 #include <device_functions.h>
 #include <cuda_runtime_api.h>
 
-#define DIM 8
-#define BLOCKDIM 4
-#define GRIDDIM 2
+#define DIM 2048
+#define BLOCKDIM 512
+#define GRIDDIM 4
 
 #define gpuErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
@@ -27,7 +27,9 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 	}
 }
 
-__constant__ float firstRow[DIM];
+/*
+indexII
+*/
 
 void LUDecomposition(float *A, float *L){
 	int indexII = 0, indexJI = 0, indexJK = 0, indexIK = 0;
@@ -120,7 +122,7 @@ __syncthreads();
 }
 */
 
-__global__ void columnLUDecompositionGPU(float *A, float *L, int i){
+__global__ void columnLUDecompositionGPU(float *A, float *L, float *U, int i){
 	//L'indice i rappresenta la colonna da considerare, mentre threadIdx.x rappresenta la riga
 	int j = threadIdx.x + blockDim.x * blockIdx.x + 1 + i;
 	int indexJI = j * DIM + i, indexII = i * DIM + i, indexJK = 0, indexIK = 0;
@@ -137,7 +139,7 @@ __global__ void columnLUDecompositionGPU(float *A, float *L, int i){
 			indexJK = j * DIM + k;
 
 			val = A[indexJK] - mik * A[indexIK];
-			printf("firstRow[%d] = %8f\n", k, firstRow[k]);
+
 			A[indexJK] = val;
 			//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
 			//U[j * DIM + k] = A[j * DIM + k] = val;
@@ -165,7 +167,7 @@ void checkResult(float *A, float *RA){
 		//printf("\n");
 	}
 
-	printf("\n\n***EVERYTHING'S FINE!***\n\n");
+	printf("\n\n***EVERYTHING'S FINE! YEEE!!!***\n\n");
 }
 
 float matrixDet(float m[DIM][DIM], int car) {
@@ -247,18 +249,24 @@ __global__ void printMatrixGPU(float *M, int nRow, int nCol){
 	}
 }
 
-int main(){
-	printf("Dimensioni considerate:\nDIM: %d - GRIDDIM: %d - BLOCKDIM: %d\n", DIM, GRIDDIM, BLOCKDIM);
 
+/*Matrice esempio, su cui è verificata la correttezza dell'algoritmo
+float host_A[DIM][DIM] = { { 1, 3, 4, 5 }, { 2, 1, 1, 0 }, { 2, 3, 1, -1 }, { 0, 4, 3, 2} };
+
+Matrici risultato
+L = {{1 0 0 0}, {2 1 0 0}, {2 0.6 1 0}, {0 -0.8 0.928571 1}}
+U = {{1 3 4 5}, {0 -5 -7 -10}, {0 0 -2.8 -5}, {0 0 0 -1.357142}}*/
+
+int main(){
 	//DICHIARAZIONE VARIABILI
 
 	//float *host_A[DIM][DIM];
-	float *host_A, *host_L, *host_U, *host_RU, *host_RL, *host_firstRow;
+	float *host_A, *host_L, *host_U, *host_RU, *host_RL;
 
-	float *dev_A, *dev_L;
+	float *dev_A, *dev_L, *dev_U;
 	int size = sizeof(float) * DIM * DIM;
 
-	FILE *f = fopen("time.txt", "a");
+	float timeArray[DIM];
 
 	clock_t begin, duration;
 
@@ -278,10 +286,9 @@ int main(){
 	host_U = (float *)malloc(size);
 	host_RU = (float *)malloc(size);
 	host_RL = (float *)malloc(size);
-	host_firstRow = (float *)malloc(sizeof(float) * DIM);
 
 	srand(time(NULL));
-	
+
 	for (int i = 0; i < DIM; i++){
 		for (int j = 0; j < DIM; j++){
 			host_A[i * DIM + j] = rand() % 11;
@@ -295,32 +302,30 @@ int main(){
 
 			host_RU[i * DIM + j] = 0;
 
-			host_RL[i * DIM + j] = 0;			
+			host_RL[i * DIM + j] = 0;
 		}
-
-		host_firstRow[i] = host_A[i];
 	}
 
 	//ALLOCAZIONE ED INIZIALIZZAZIONE VARIABILI GPU
 
 	gpuErrorCheck(cudaMalloc((void **)&dev_A, size));
 	gpuErrorCheck(cudaMalloc((void **)&dev_L, size));
-	
+	gpuErrorCheck(cudaMalloc((void **)&dev_U, size));
+
 	gpuErrorCheck(cudaMemcpy(dev_A, host_A, size, cudaMemcpyHostToDevice));
 	gpuErrorCheck(cudaMemcpy(dev_L, host_L, size, cudaMemcpyHostToDevice));
-	gpuErrorCheck(cudaMemcpyToSymbol(firstRow, (void **)&host_firstRow, sizeof(float) * DIM));
-	
+	gpuErrorCheck(cudaMemcpy(dev_U, host_U, size, cudaMemcpyHostToDevice));
 
 	//STAMPA MATRICE DA DECOMPORRE
 
-	printf("|____MATRICE A CPU____|\n");
+	/*printf("|____MATRICE A CPU____|\n");
 	printMatrixCPU(host_A);
 
 	printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());
+	gpuErrorCheck(cudaDeviceSynchronize());*/
 
 	//CALCOLO LA DECOMPOSIZIONE
 
@@ -331,8 +336,6 @@ int main(){
 	LUDecomposition(host_A, host_L);
 
 	duration = clock() - begin;
-
-	fprintf(f, "%8f ", (float)(duration) / CLOCKS_PER_SEC);
 
 	printf("CPU Timing:\n-duration: %f\n", (float)(duration) / CLOCKS_PER_SEC);
 
@@ -345,10 +348,8 @@ int main(){
 
 	for (int i = 0; i < DIM - 1; i++){
 
-		columnLUDecompositionGPU << <GRIDDIM, BLOCKDIM >> >(dev_A, dev_L, i);
+		columnLUDecompositionGPU << <GRIDDIM, BLOCKDIM >> >(dev_A, dev_L, dev_U, i);
 		gpuErrorCheck(cudaDeviceSynchronize());
-
-		//cudaMemcpyToSymbol(firstRow, (void **)&host_A[i + 1], sizeof(float) * DIM);
 
 		//printf("\nKernel Time for column %d: %8f", i, cudaElapsedTime / 1000);
 		//printf("\n%8f", cudaElapsedTime / 1000);
@@ -366,34 +367,36 @@ int main(){
 
 	printf("\n%8f", cudaElapsedTime / 1000);
 
-	fprintf(f, "%8f\n", cudaElapsedTime / 1000);
-
-	fclose(f);
-
-	printf("\n|____________|\n");
+	//printf("\n|____________|\n");
 
 	//STAMPO LE MATRICI L ED U
 	gpuErrorCheck(cudaPeekAtLastError());
 	gpuErrorCheck(cudaDeviceSynchronize());
 
-	printf("\n|____MATRICE L CPU____|\n");
+	/*printf("\n|____MATRICE L CPU____|\n");
 	printMatrixCPU(host_L);
 
 	printf("\n|____MATRICE L GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_L,DIM,DIM);
 
 	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());
+	gpuErrorCheck(cudaDeviceSynchronize());*/
 
 	triangolarUpperMatrix(host_A, host_U);
-	printf("\n|____MATRICE U CPU____|\n");
+	/*printf("\n|____MATRICE U CPU____|\n");
 	printMatrixCPU(host_U);
 
-	printf("\n|____MATRICE U GPU____|\n");
-	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
+	/*printf("\n|____MATRICE U GPU____|\n");
+	printMatrixGPU << <1, blockSize >> >(dev_U, DIM, DIM);
 
 	gpuErrorCheck(cudaPeekAtLastError());
 	gpuErrorCheck(cudaDeviceSynchronize());
+
+	printf("\n|____MATRICE A GPU____|\n");
+	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
+
+	gpuErrorCheck(cudaPeekAtLastError());
+	gpuErrorCheck(cudaDeviceSynchronize());*/
 
 	gpuErrorCheck(cudaMemcpy(host_RU, dev_A, size, cudaMemcpyDeviceToHost));
 
@@ -411,6 +414,7 @@ int main(){
 
 	cudaFree(dev_A);
 	cudaFree(dev_L);
+	cudaFree(dev_U);
 
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);

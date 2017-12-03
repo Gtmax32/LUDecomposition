@@ -12,9 +12,9 @@
 #include <device_functions.h>
 #include <cuda_runtime_api.h>
 
-#define DIM 2048
+#define DIM 1024
 #define BLOCKDIM 512
-#define GRIDDIM 4
+#define GRIDDIM 2
 
 #define gpuErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
@@ -26,10 +26,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 			exit(code);
 	}
 }
-
-/*
-indexII
-*/
 
 void LUDecomposition(float *A, float *L){
 	int indexII = 0, indexJI = 0, indexJK = 0, indexIK = 0;
@@ -122,7 +118,7 @@ __syncthreads();
 }
 */
 
-__global__ void columnLUDecompositionGPU(float *A, float *L, float *U, int i){
+__global__ void columnLUDecompositionGPU(float *A, float *L, int i){
 	//L'indice i rappresenta la colonna da considerare, mentre threadIdx.x rappresenta la riga
 	int j = threadIdx.x + blockDim.x * blockIdx.x + 1 + i;
 	int indexJI = j * DIM + i, indexII = i * DIM + i, indexJK = 0, indexIK = 0;
@@ -167,7 +163,7 @@ void checkResult(float *A, float *RA){
 		//printf("\n");
 	}
 
-	printf("\n\n***EVERYTHING'S FINE! YEEE!!!***\n\n");
+	printf("\n\n***EVERYTHING'S FINE!***\n\n");
 }
 
 float matrixDet(float m[DIM][DIM], int car) {
@@ -249,24 +245,18 @@ __global__ void printMatrixGPU(float *M, int nRow, int nCol){
 	}
 }
 
-
-/*Matrice esempio, su cui è verificata la correttezza dell'algoritmo
-float host_A[DIM][DIM] = { { 1, 3, 4, 5 }, { 2, 1, 1, 0 }, { 2, 3, 1, -1 }, { 0, 4, 3, 2} };
-
-Matrici risultato
-L = {{1 0 0 0}, {2 1 0 0}, {2 0.6 1 0}, {0 -0.8 0.928571 1}}
-U = {{1 3 4 5}, {0 -5 -7 -10}, {0 0 -2.8 -5}, {0 0 0 -1.357142}}*/
-
 int main(){
+	printf("DIM: %d - GRIDDIM: %d - BLOCKDIM: %d\n\n", DIM, GRIDDIM, BLOCKDIM);
+
 	//DICHIARAZIONE VARIABILI
 
 	//float *host_A[DIM][DIM];
 	float *host_A, *host_L, *host_U, *host_RU, *host_RL;
 
-	float *dev_A, *dev_L, *dev_U;
+	float *dev_A, *dev_L;
 	int size = sizeof(float) * DIM * DIM;
 
-	float timeArray[DIM];
+	FILE *f = fopen("time.txt", "a");
 
 	clock_t begin, duration;
 
@@ -310,11 +300,9 @@ int main(){
 
 	gpuErrorCheck(cudaMalloc((void **)&dev_A, size));
 	gpuErrorCheck(cudaMalloc((void **)&dev_L, size));
-	gpuErrorCheck(cudaMalloc((void **)&dev_U, size));
 
 	gpuErrorCheck(cudaMemcpy(dev_A, host_A, size, cudaMemcpyHostToDevice));
 	gpuErrorCheck(cudaMemcpy(dev_L, host_L, size, cudaMemcpyHostToDevice));
-	gpuErrorCheck(cudaMemcpy(dev_U, host_U, size, cudaMemcpyHostToDevice));
 
 	//STAMPA MATRICE DA DECOMPORRE
 
@@ -339,16 +327,17 @@ int main(){
 
 	printf("CPU Timing:\n-duration: %f\n", (float)(duration) / CLOCKS_PER_SEC);
 
+	fprintf(f, "%8f ", (float)(duration) / CLOCKS_PER_SEC);
+
 	//LUDecompositionGPU << <1, blockSize >> >(dev_A, dev_L);
 
 	//printf("\n|____DEBUG____|\n");
 
-	//FILE *f = fopen("time.txt", "w");
 	gpuErrorCheck(cudaEventRecord(start));
 
 	for (int i = 0; i < DIM - 1; i++){
 
-		columnLUDecompositionGPU << <GRIDDIM, BLOCKDIM >> >(dev_A, dev_L, dev_U, i);
+		columnLUDecompositionGPU << <GRIDDIM, BLOCKDIM >> >(dev_A, dev_L, i);
 		gpuErrorCheck(cudaDeviceSynchronize());
 
 		//printf("\nKernel Time for column %d: %8f", i, cudaElapsedTime / 1000);
@@ -365,8 +354,11 @@ int main(){
 
 	cudaEventElapsedTime(&cudaElapsedTime, start, stop);
 
+	fprintf(f, "%8f\n", cudaElapsedTime / 1000);
+
 	printf("\n%8f", cudaElapsedTime / 1000);
 
+	fclose(f);
 	//printf("\n|____________|\n");
 
 	//STAMPO LE MATRICI L ED U
@@ -414,7 +406,6 @@ int main(){
 
 	cudaFree(dev_A);
 	cudaFree(dev_L);
-	cudaFree(dev_U);
 
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);

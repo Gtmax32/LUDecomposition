@@ -12,9 +12,9 @@
 #include <device_functions.h>
 #include <cuda_runtime_api.h>
 
-#define DIM 1024
-#define BLOCKDIM 512
-#define GRIDDIM 2
+#define DIM 8
+#define BLOCKDIM 8
+#define GRIDDIM 1
 
 #define gpuErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
@@ -26,6 +26,8 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort =
 			exit(code);
 	}
 }
+
+__constant__ float firstRow[DIM];
 
 void LUDecomposition(float *A, float *L){
 	int indexII = 0, indexJI = 0, indexJK = 0, indexIK = 0;
@@ -134,17 +136,20 @@ __global__ void columnLUDecompositionGPU(float *A, float *L, int i){
 			indexIK = i * DIM + k;
 			indexJK = j * DIM + k;
 
-			val = A[indexJK] - mik * A[indexIK];
-
+			//val = A[indexJK] - mik * A[indexIK];
+			val = A[indexJK] - mik * firstRow[k];
+			
 			A[indexJK] = val;
+			firstRow[k] = val;
 			//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
 			//U[j * DIM + k] = A[j * DIM + k] = val;
 
-			//printf("i: %d - j: %d - k: %d - val: %f\n", i, j, k, val);
+			printf("i: %d - j: %d - k: %d - indexJI: %d - indexII: %d -indexJK: %d -indexIK: %d - val: %f\n", i, j, k, indexJI, indexII, indexJK, indexIK, val);
+			//printf("i = %d - firstRow[%d] = %8f\n",i,k,firstRow[k]);
 		}
 
 		A[indexJI] = 0;
-
+		firstRow[i] = 0;
 		__syncthreads();
 	}
 }
@@ -251,7 +256,7 @@ int main(){
 	//DICHIARAZIONE VARIABILI
 
 	//float *host_A[DIM][DIM];
-	float *host_A, *host_L, *host_U, *host_RU, *host_RL;
+	float *host_A, *host_L, *host_U, *host_RU, *host_RL, *host_firstRow;
 
 	float *dev_A, *dev_L;
 	int size = sizeof(float) * DIM * DIM;
@@ -276,6 +281,7 @@ int main(){
 	host_U = (float *)malloc(size);
 	host_RU = (float *)malloc(size);
 	host_RL = (float *)malloc(size);
+	host_firstRow = (float *)malloc(sizeof(float) * DIM);
 
 	srand(time(NULL));
 
@@ -294,6 +300,8 @@ int main(){
 
 			host_RL[i * DIM + j] = 0;
 		}
+
+		host_firstRow[i] = host_A[i];
 	}
 
 	//ALLOCAZIONE ED INIZIALIZZAZIONE VARIABILI GPU
@@ -303,13 +311,14 @@ int main(){
 
 	gpuErrorCheck(cudaMemcpy(dev_A, host_A, size, cudaMemcpyHostToDevice));
 	gpuErrorCheck(cudaMemcpy(dev_L, host_L, size, cudaMemcpyHostToDevice));
+	gpuErrorCheck(cudaMemcpyToSymbol(firstRow, host_firstRow, sizeof(float) * DIM));
 
 	//STAMPA MATRICE DA DECOMPORRE
 
-	/*printf("|____MATRICE A CPU____|\n");
+	printf("|____MATRICE A CPU____|\n");
 	printMatrixCPU(host_A);
 
-	printf("\n|____MATRICE A GPU____|\n");
+	/*printf("\n|____MATRICE A GPU____|\n");
 	printMatrixGPU << <1, blockSize >> >(dev_A, DIM, DIM);
 
 	gpuErrorCheck(cudaPeekAtLastError());

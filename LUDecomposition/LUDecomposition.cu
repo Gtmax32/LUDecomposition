@@ -12,9 +12,9 @@
 #include <device_functions.h>
 #include <cuda_runtime_api.h>
 
-#define DIM 1024
-#define BLOCKDIM 512
-#define GRIDDIM 2
+#define DIM 8192
+#define BLOCKDIM 128
+#define GRIDDIM 64
 
 #define gpuErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
@@ -48,10 +48,6 @@ void LUDecomposition(float *A, float *L){
 				indexIK = i * DIM + k;
 
 				A[indexJK] -= mik * A[indexIK];
-
-				/*if (i == 0){
-				printf("j: %d - k: %d - indexII: %d - indexJI: %d - indexJK: %d - indexIK: %d\n", j, k, indexII, indexJI, indexJK, indexIK);
-				}*/
 			}
 
 			A[indexJI] = 0;
@@ -127,9 +123,7 @@ __global__ void columnLUDecompositionGPU(float *A, float *L, int i){
 	if (j < DIM){
 		mik = A[indexJI] / A[indexII];
 		L[indexJI] = mik;
-
-		//A[j * DIM + k] -= A[j * DIM + i] / A[i * DIM + i] * A[i * DIM + k];
-
+		
 		for (int k = i + 1; k < DIM; k++){
 			indexIK = i * DIM + k;
 			indexJK = j * DIM + k;
@@ -137,10 +131,6 @@ __global__ void columnLUDecompositionGPU(float *A, float *L, int i){
 			val = A[indexJK] - mik * A[indexIK];
 
 			A[indexJK] = val;
-			//val = A[j * DIM + k] - A[index] / A[i * DIM + i] * A[i * DIM + k];
-			//U[j * DIM + k] = A[j * DIM + k] = val;
-
-			//printf("i: %d - j: %d - k: %d - val: %f\n", i, j, k, val);
 		}
 
 		A[indexJI] = 0;
@@ -329,24 +319,13 @@ int main(){
 
 	fprintf(f, "%8f ", (float)(duration) / CLOCKS_PER_SEC);
 
-	//LUDecompositionGPU << <1, blockSize >> >(dev_A, dev_L);
-
-	//printf("\n|____DEBUG____|\n");
-
 	gpuErrorCheck(cudaEventRecord(start));
 
 	for (int i = 0; i < DIM - 1; i++){
 
 		columnLUDecompositionGPU << <GRIDDIM, BLOCKDIM >> >(dev_A, dev_L, i);
 		gpuErrorCheck(cudaDeviceSynchronize());
-
-		//printf("\nKernel Time for column %d: %8f", i, cudaElapsedTime / 1000);
-		//printf("\n%8f", cudaElapsedTime / 1000);
-		//timeArray[i] = cudaElapsedTime;
-		//fprintf(f, "%8f\n", cudaElapsedTime / 1000);
 	}
-
-	//fclose(f);
 
 	gpuErrorCheck(cudaEventRecord(stop));
 
@@ -359,11 +338,10 @@ int main(){
 	printf("\n%8f", cudaElapsedTime / 1000);
 
 	fclose(f);
-	//printf("\n|____________|\n");
-
+	
 	//STAMPO LE MATRICI L ED U
-	gpuErrorCheck(cudaPeekAtLastError());
-	gpuErrorCheck(cudaDeviceSynchronize());
+	//gpuErrorCheck(cudaPeekAtLastError());
+	//gpuErrorCheck(cudaDeviceSynchronize());
 
 	/*printf("\n|____MATRICE L CPU____|\n");
 	printMatrixCPU(host_L);
